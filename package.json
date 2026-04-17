@@ -1,0 +1,12 @@
+{
+  "name": "hvac-calculator",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build-static.mjs",
+    "deploy": "npm run build && npx --yes netlify deploy --prod --dir=dist --no-build",
+    "deply": "npm run deploy",
+    "check": "node --check src/main.js && node --check src/data/site.js && node --check src/utils/hvac.js && node --check scripts/build-static.mjs"
+  }
+}

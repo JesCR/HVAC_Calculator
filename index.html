@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>HVAC Calculator | Montenovo</title>
+    <meta
+      name="description"
+      content="Calculadora HVAC autónoma para estimar carga térmica, clases de máquina y reserva operativa."
+    />
+    <link rel="icon" type="image/png" href="./src/assets/ui/favicon-montenovo.png" />
+    <link rel="shortcut icon" href="./src/assets/ui/favicon-montenovo.png" />
+    <link rel="stylesheet" href="./src/styles.css" />
+  </head>
+  <body>
+    <div class="site-shell">
+      <header class="masthead">
+        <a class="brand" href="#top" aria-label="Ir al inicio de la calculadora HVAC">
+          <img
+            class="brand-icon"
+            src="./src/assets/ui/montenovo-mark.png"
+            alt=""
+            aria-hidden="true"
+          />
+          <span class="brand-copy">
+            <span class="brand-mark">Montenovo</span>
+            <span class="brand-subtitle">HVAC Calculator</span>
+          </span>
+        </a>
+        <div class="masthead-meta">
+          <span class="masthead-badge">Web autónoma</span>
+        </div>
+      </header>
+
+      <main class="calculator-main" id="top">
+        <section class="calculator-hero">
+          <div class="section-head section-head-tight">
+            <p class="eyebrow">Laboratorio HVAC</p>
+            <h1>Calculadora de carga térmica y recomendación de clase</h1>
+            <p class="section-copy">
+              Versión autónoma del laboratorio HVAC: gráfica viva, inputs editables y resultados
+              exportables a PDF con una sola pantalla.
+            </p>
+          </div>
+        </section>
+
+        <section class="calculator-section">
+          <div class="lab-workbench lab-workbench-hvac standalone-hvac-workbench">
+            <div class="lab-info-column">
+              <div class="lab-intro-block">
+                <div class="story-block">
+                  <p class="eyebrow">Criterio de partida</p>
+                  <h3>Curva climática, lazos abiertos y dimensionado ajustado.</h3>
+                  <p>
+                    El objetivo es poder mover hipótesis de envolvente y ventilación para leer, de
+                    forma inmediata, la carga base, la banda de margen y la reserva adicional de
+                    sistema.
+                  </p>
+                </div>
+                <div class="story-points" id="hvac-summary"></div>
+              </div>
+
+              <div class="lab-readout">
+                <div class="panel-head">
+                  <p class="eyebrow">Calculadora base</p>
+                  <h3>Banda de potencia térmica</h3>
+                </div>
+                <div class="hvac-chart-wrap">
+                  <div class="chart-head">
+                    <p class="eyebrow">Lectura frente a temperatura exterior</p>
+                    <p class="chart-note">
+                      Carga base con banda de margen y colchón operativo sobre referencias de 4 a
+                      16 kW.
+                    </p>
+                  </div>
+                  <div class="chart-stage">
+                    <button
+                      class="chart-info-button"
+                      id="hvac-chart-info-button"
+                      type="button"
+                      aria-label="Abrir leyenda técnica de la gráfica HVAC"
+                    >
+                      <img
+                        class="chart-info-button-icon"
+                        src="./src/assets/ui/info-circle.svg"
+                        alt=""
+                      />
+                    </button>
+                    <svg
+                      id="hvac-chart"
+                      viewBox="0 0 720 280"
+                      role="img"
+                      aria-label="Curva HVAC"
+                    ></svg>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <aside class="lab-controls-column">
+              <div class="lab-controls-shell">
+                <div class="panel-head panel-head-compact">
+                  <p class="eyebrow">Inputs V3</p>
+                  <h3>Parámetros editables</h3>
+                </div>
+
+                <div class="panel-actions">
+                  <button class="panel-reset-button" id="hvac-reset-button" type="button">
+                    Reset
+                  </button>
+                  <button class="panel-action-button" id="hvac-export-button" type="button">
+                    EXPORTAR
+                  </button>
+                </div>
+
+                <div class="hvac-controls-topbar">
+                  <div
+                    class="control-group control-group-compact hvac-margin-group"
+                    id="hvac-margin-card"
+                  ></div>
+                </div>
+
+                <form class="hvac-form" id="hvac-form"></form>
+                <div class="chart-insights" id="hvac-chart-insights"></div>
+              </div>
+            </aside>
+
+            <div class="hvac-results" id="hvac-results"></div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <dialog class="info-modal" id="hvac-chart-info-modal">
+      <form method="dialog" class="info-modal-frame">
+        <button class="info-modal-close" type="submit" aria-label="Cerrar leyenda técnica">
+          Cerrar
+        </button>
+        <article class="info-modal-copy">
+          <h2>Leyenda técnica de la gráfica</h2>
+
+          <section>
+            <h3>Qué representa esta gráfica</h3>
+            <p>
+              La gráfica muestra la carga térmica de calefacción estimada de la vivienda en función
+              de la temperatura exterior. A menor temperatura exterior, mayor diferencia térmica con
+              el interior y, por tanto, mayor potencia necesaria para mantener la casa a la
+              temperatura objetivo.
+            </p>
+          </section>
+
+          <section>
+            <h3>Cómo se calcula</h3>
+            <p>La carga se calcula con la relación:</p>
+            <p class="info-modal-formula">
+              Potencia térmica = H_total × (T interior - T exterior)
+            </p>
+            <p>donde:</p>
+            <ul>
+              <li><strong>T interior:</strong> temperatura objetivo de la vivienda, por ejemplo 21 °C.</li>
+              <li><strong>T exterior:</strong> temperatura exterior de cálculo.</li>
+              <li>
+                <strong>H_total:</strong> coeficiente global de pérdidas de la vivienda, en W/K.
+                Representa cuánto calor pierde la casa por cada grado de diferencia entre interior y
+                exterior.
+              </li>
+            </ul>
+          </section>
+
+          <section>
+            <h3>Qué es H_total</h3>
+            <p>H_total es la suma de:</p>
+            <ul>
+              <li>
+                <strong>Pérdidas por transmisión:</strong> ventanas, fachadas, cubierta y suelo.
+              </li>
+              <li>
+                <strong>Pérdidas por ventilación/infiltración:</strong> renovación de aire,
+                corregida por la recuperación del VMC, más pérdidas residuales e incertidumbres.
+              </li>
+            </ul>
+          </section>
+
+          <section>
+            <h3>Qué muestran las líneas</h3>
+            <ul>
+              <li>
+                <strong>Carga base:</strong> recta principal calculada con un único conjunto de
+                transmitancias y pérdidas extra.
+              </li>
+              <li>
+                <strong>Banda ± margen:</strong> franja sombreada por encima y por debajo de la
+                carga base. Representa el margen de dimensionado aplicado como tolerancia del
+                modelo.
+              </li>
+              <li>
+                <strong>Carga + margen + colchón:</strong> banda adicional superior que incorpora el
+                colchón ACS / operativo. Sirve para visualizar la reserva extra del sistema por
+                encima de la carga térmica con margen.
+              </li>
+            </ul>
+          </section>
+
+          <section>
+            <h3>Qué significa la curva verde</h3>
+            <p>
+              La curva verde representa de forma orientativa la distribución de temperaturas
+              exteriores. Sirve para visualizar en qué rango de temperaturas trabaja la vivienda la
+              mayor parte del tiempo. No indica carga térmica, sino frecuencia relativa de
+              ocurrencia.
+            </p>
+          </section>
+
+          <section>
+            <h3>Qué significan TS99 y TS99,6</h3>
+            <ul>
+              <li>
+                <strong>TS99:</strong> temperatura exterior por debajo de la cual solo cae el 1 % de
+                las horas del año. Es una referencia habitual para dimensionar calefacción en
+                vivienda.
+              </li>
+              <li>
+                <strong>TS99,6:</strong> temperatura más severa; por debajo de ella solo cae el 0,4 %
+                de las horas del año.
+              </li>
+            </ul>
+            <p>Estas referencias ayudan a relacionar clima real y potencia necesaria.</p>
+          </section>
+
+          <section>
+            <h3>Cómo interpretar la gráfica para elegir máquina</h3>
+            <ul>
+              <li>
+                La parte izquierda de la gráfica representa los días más fríos y, por tanto, la
+                potencia máxima de calefacción.
+              </li>
+              <li>La parte central representa el invierno habitual.</li>
+              <li>
+                La parte derecha representa días templados, donde la demanda puede bajar a 1–2 kW o
+                incluso menos.
+              </li>
+            </ul>
+            <p>
+              En esos días suaves, la modulación mínima de la bomba de calor pasa a ser tan
+              importante como su potencia máxima.
+            </p>
+          </section>
+
+          <section>
+            <h3>Idea clave de diseño</h3>
+            <p>
+              La mejor máquina no es solo la que cubre la carga máxima, sino la que también puede
+              modular muy abajo para trabajar muchas horas con estabilidad, pocas arrancadas/paradas
+              y buena eficiencia.
+            </p>
+          </section>
+        </article>
+      </form>
+    </dialog>
+
+    <script type="module" src="./src/main.js"></script>
+  </body>
+</html>
