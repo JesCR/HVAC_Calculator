@@ -11,7 +11,6 @@ const hvacSummary = document.querySelector("#hvac-summary");
 const hvacForm = document.querySelector("#hvac-form");
 const hvacMarginCard = document.querySelector("#hvac-margin-card");
 const hvacResetButton = document.querySelector("#hvac-reset-button");
-const hvacExportButton = document.querySelector("#hvac-export-button");
 const hvacResults = document.querySelector("#hvac-results");
 const hvacChart = document.querySelector("#hvac-chart");
 const hvacChartWrap = hvacChart?.closest(".hvac-chart-wrap");
@@ -20,12 +19,18 @@ const hvacChartInfoButton = document.querySelector("#hvac-chart-info-button");
 const hvacChartInfoModal = document.querySelector("#hvac-chart-info-modal");
 
 const hvacState = structuredClone(hvacDefaults);
-let lastHvacResult = calculateHvacScenario(hvacState, machineShortlist);
 
-renderHvacSummary();
-renderHvacForm();
-updateHvacOutput();
+if (hvacSummary) {
+  renderHvacSummary();
+}
+
+if (hvacForm && hvacResults && hvacChart) {
+  renderHvacForm();
+  updateHvacOutput();
+}
+
 bindHvacChartInfoModal();
+bindRevealAnimations();
 
 function bindHvacChartInfoModal() {
   if (!hvacChartInfoButton || !hvacChartInfoModal) {
@@ -38,31 +43,40 @@ function bindHvacChartInfoModal() {
 }
 
 function renderHvacSummary() {
-  if (!hvacSummary) {
-    return;
-  }
-
   hvacSummary.innerHTML = `
     <div class="summary-metric">
+      <span class="summary-label">Modelo base</span>
+      <strong>Carga térmica + margen de diseño</strong>
+    </div>
+    <div class="summary-metric">
       <span class="summary-label">Modelo actual</span>
-      <strong>Carga base + margen ± + colchón operativo</strong>
+      <strong>Calculadora V3 + selector de máquina</strong>
     </div>
     <div class="summary-metric">
       <span class="summary-label">Uso previsto</span>
       <strong>Carga térmica + clase calefacción + clase sistema</strong>
     </div>
-    <div class="summary-metric">
-      <span class="summary-label">Salida exportable</span>
-      <strong>Gráfica + inputs + recomendaciones en PDF imprimible</strong>
-    </div>
   `;
 }
 
 function renderHvacForm() {
+  const mergedGroups = hvacControlGroups
+    .filter((group) => group.id !== "dimensioning")
+    .map((group) => {
+      if (group.id !== "ventilation") {
+        return group;
+      }
+
+      return {
+        ...group,
+        title: "Ventilación, extras y operación",
+        note: "VMC continua, pérdidas residuales y colchón operativo"
+      };
+    });
+
   renderHvacMarginControl();
 
-  hvacForm.innerHTML = hvacControlGroups
-    .filter((group) => group.id !== "dimensioning")
+  hvacForm.innerHTML = mergedGroups
     .map((group) => {
       const controlsMarkup = hvacControls
         .filter(
@@ -108,11 +122,35 @@ function renderHvacForm() {
     })
     .join("");
 
-  hvacForm.addEventListener("input", handleControlInput);
+  hvacForm.addEventListener("input", (event) => {
+    const input = event.target.closest("[data-control]");
+    if (!input) {
+      return;
+    }
+
+    writeControlValue(input.dataset.control, Number(input.value));
+    const displayNode = hvacForm.querySelector(`[data-display="${input.dataset.control}"]`);
+    const control = hvacControls.find((entry) => entry.key === input.dataset.control);
+    if (displayNode) {
+      displayNode.textContent = formatControlValue(control, Number(input.value));
+    }
+    updateHvacOutput();
+  });
 
   if (hvacMarginCard && hvacMarginCard.dataset.boundInput !== "true") {
     hvacMarginCard.dataset.boundInput = "true";
-    hvacMarginCard.addEventListener("input", handleControlInput);
+    hvacMarginCard.addEventListener("input", (event) => {
+      const input = event.target.closest("[data-control]");
+      if (!input) {
+        return;
+      }
+
+      writeControlValue(input.dataset.control, Number(input.value));
+      document
+        .querySelectorAll(`[data-display="${input.dataset.control}"]`)
+        .forEach((node) => (node.textContent = formatControlValue(hvacControls.find((entry) => entry.key === input.dataset.control), Number(input.value))));
+      updateHvacOutput();
+    });
   }
 
   if (hvacResetButton && hvacResetButton.dataset.boundReset !== "true") {
@@ -123,27 +161,6 @@ function renderHvacForm() {
       updateHvacOutput();
     });
   }
-
-  if (hvacExportButton && hvacExportButton.dataset.boundExport !== "true") {
-    hvacExportButton.dataset.boundExport = "true";
-    hvacExportButton.addEventListener("click", exportHvacPdf);
-  }
-}
-
-function handleControlInput(event) {
-  const input = event.target.closest("[data-control]");
-  if (!input) {
-    return;
-  }
-
-  writeControlValue(input.dataset.control, Number(input.value));
-  const control = hvacControls.find((entry) => entry.key === input.dataset.control);
-
-  document
-    .querySelectorAll(`[data-display="${input.dataset.control}"]`)
-    .forEach((node) => (node.textContent = formatControlValue(control, Number(input.value))));
-
-  updateHvacOutput();
 }
 
 function renderHvacMarginControl() {
@@ -152,15 +169,17 @@ function renderHvacMarginControl() {
   }
 
   const control = hvacControls.find((entry) => entry.key === "designMargin");
+  if (!control) {
+    return;
+  }
+
   const initialValue = readControlValue(control.key);
   const displayValue = formatControlValue(control, initialValue);
 
   hvacMarginCard.innerHTML = `
     <div class="hvac-margin-copy">
       <span class="control-group-title hvac-margin-title">Margen de dimensionado</span>
-      <p class="control-group-note hvac-margin-note">
-        Ajusta la banda sombreada alrededor de la carga base.
-      </p>
+      <p class="control-group-note hvac-margin-note">Ajusta la banda sombreada alrededor de la carga base.</p>
     </div>
     <label class="control-row hvac-margin-row">
       <span class="control-input-row">
@@ -183,82 +202,13 @@ function renderHvacMarginControl() {
 
 function updateHvacOutput() {
   const result = calculateHvacScenario(hvacState, machineShortlist);
-  lastHvacResult = result;
-
-  const coefficientRows = [
-    {
-      label: "H transmisión",
-      value: `${formatNumber(result.transmission)} W/K`,
-      note: "Coeficiente constante: depende de superficies y U base."
-    },
-    {
-      label: "H ventilación neta",
-      value: `${formatNumber(result.ventilation)} W/K`,
-      note: "Depende de caudal VMC, recuperación y pérdidas extra."
-    },
-    {
-      label: "H total",
-      value: `${formatNumber(result.hTotal)} W/K`,
-      note: "Htotal = Htransmisión + Hventilación + extras."
-    }
-  ];
-
-  const loadRows = [
-    {
-      label: "Carga TS99",
-      value: `${formatNumber(result.scenarios[0].baseLoad)} kW`,
-      note: `Banda ± margen ${formatNumber(result.scenarios[0].loadLower)}–${formatNumber(result.scenarios[0].loadUpper)} kW.`
-    },
-    {
-      label: "Carga TS99,6",
-      value: `${formatNumber(result.scenarios[1].baseLoad)} kW`,
-      note: `Banda ± margen ${formatNumber(result.scenarios[1].loadLower)}–${formatNumber(result.scenarios[1].loadUpper)} kW.`
-    },
-    {
-      label: "Carga Tmin",
-      value: `${formatNumber(result.scenarios[2].baseLoad)} kW`,
-      note: `Sistema ${formatNumber(result.scenarios[2].systemLoad)} kW al añadir colchón operativo.`
-    }
-  ];
-
-  const classRows = [
-    {
-      label: "Clase calefacción sugerida",
-      value: formatClass(result.heatingClass),
-      note: "Clase de máquina por calefacción con margen de diseño."
-    },
-    {
-      label: "Clase sistema sugerida",
-      value: formatClass(result.systemClass),
-      note: "Clase de máquina al añadir colchón ACS/operativo."
-    },
-    {
-      label: "Recomendación física",
-      value: formatClass(result.physicalRecommendation ?? result.input.machines.at(-1)),
-      note: result.recommendationText
-    }
-  ];
-
-  const renderSummaryRows = (rows) =>
-    rows
-      .map(
-        (row) => `
-          <div class="auto-summary-row">
-            <span>${row.label}</span>
-            <strong>${row.value}</strong>
-            <p>${row.note}</p>
-          </div>
-        `
-      )
-      .join("");
-
   const scenarioCards = result.scenarios
     .map(
       (scenario) => `
         <article class="scenario-card">
           <p class="brand-name">${scenario.label}</p>
           <strong>${formatNumber(scenario.baseLoad)} kW</strong>
-          <p class="brand-copy">Carga base para mantener la vivienda estable.</p>
+          <p class="brand-copy">Carga base para mantener el espacio interior estable.</p>
           <p class="brand-copy brand-copy-muted">
             Banda ± margen ${formatNumber(scenario.loadLower)}–${formatNumber(scenario.loadUpper)} kW${
               scenario.label === "Mínima observada"
@@ -267,19 +217,6 @@ function updateHvacOutput() {
             }
           </p>
         </article>
-      `
-    )
-    .join("");
-
-  const shortlistMarkup = result.shortlist
-    .map(
-      (brand) => `
-        <div class="brand-result">
-          <p class="brand-name">${brand.brand}</p>
-          <strong>${brand.recommended ?? "Shortlist insuficiente"}</strong>
-          <p class="brand-copy">${brand.summary}</p>
-          <p class="brand-copy brand-copy-muted">${brand.nuance}</p>
-        </div>
       `
     )
     .join("");
@@ -300,14 +237,91 @@ function updateHvacOutput() {
     })
     .join("");
 
+  const shortlistMarkup = result.shortlist
+    .map(
+      (brand) => `
+        <div class="brand-result">
+          <p class="brand-name">${brand.brand}</p>
+          <strong>${brand.recommended ?? "Shortlist insuficiente"}</strong>
+          <p class="brand-copy">${brand.summary}</p>
+          <p class="brand-copy brand-copy-muted">${brand.nuance}</p>
+        </div>
+      `
+    )
+    .join("");
+  const coefficientRows = [
+    {
+      label: "H transmisión",
+      value: `${formatNumber(result.transmission)} W/K`,
+      note: "Coeficiente constante: depende de superficies y U base."
+    },
+    {
+      label: "H ventilación neta",
+      value: `${formatNumber(result.ventilation)} W/K`,
+      note: "Coeficiente constante: depende de caudal VMC, recuperación y pérdidas extra."
+    },
+    {
+      label: "H total",
+      value: `${formatNumber(result.hTotal)} W/K`,
+      note: "Htotal = Htransmisión + Hventilación + extras."
+    }
+  ];
+
+  const loadRows = [
+    {
+      label: "ΔT TS99",
+      value: `${formatNumber(result.scenarios[0].delta)} K`,
+      note: "Diferencia Tin - Tout para P = H × ΔT."
+    },
+    {
+      label: "Carga TS99",
+      value: `${formatNumber(result.scenarios[0].baseLoad)} kW`,
+      note: `Banda con margen: ${formatNumber(result.scenarios[0].loadLower)}–${formatNumber(result.scenarios[0].loadUpper)} kW.`
+    },
+    {
+      label: "Carga TS99,6",
+      value: `${formatNumber(result.scenarios[1].baseLoad)} kW`,
+      note: `Banda con margen: ${formatNumber(result.scenarios[1].loadLower)}–${formatNumber(result.scenarios[1].loadUpper)} kW.`
+    },
+    {
+      label: "Carga Tmin",
+      value: `${formatNumber(result.scenarios[2].baseLoad)} kW`,
+      note: `Banda con margen: ${formatNumber(result.scenarios[2].loadLower)}–${formatNumber(result.scenarios[2].loadUpper)} kW.`
+    }
+  ];
+
+  const classRows = [
+    {
+      label: "Clase calefacción sugerida",
+      value: formatClass(result.heatingClass),
+      note: "Clase de máquina por calefacción con margen de diseño."
+    },
+    {
+      label: "Clase sistema sugerida",
+      value: formatClass(result.systemClass),
+      note: "Clase de máquina al añadir colchón ACS/operativo."
+    },
+  ];
+
+  const renderSummaryRows = (rows) =>
+    rows
+      .map(
+        (row) => `
+          <div class="auto-summary-row">
+            <span>${row.label}</span>
+            <strong>${row.value}</strong>
+            <p>${row.note}</p>
+          </div>
+        `
+      )
+      .join("");
+
   hvacResults.innerHTML = `
     <div class="result-block">
       <p class="eyebrow">Resumen automático</p>
       <p class="result-context">
-        <strong>H</strong> varía con <strong>U</strong>, superficies, ventilación, recuperación y
-        extras: <strong>Htotal = Htransmisión + Hventilación + extras</strong><br />
-        La <strong>carga</strong> varía con <strong>T interior</strong> o <strong>T exterior</strong>:
-        <strong>P = H × ΔT</strong>.
+        <strong>H</strong> varía con <strong>U</strong>, superficies, ventilación, recuperación y extras: <strong>Htotal = Htransmisión + Hventilación + extras</strong><br>
+        La <strong>carga</strong> varía con <strong>T interior</strong> o <strong>T exterior</strong>: <strong>P = H x ΔT</strong>.
       </p>
       <div class="auto-summary-section">
         <p class="auto-summary-title">Coeficientes H del modelo</p>
@@ -353,12 +367,8 @@ function renderHvacChart(result) {
   const xMax = hvacClimateProfile.chartRange.max;
   const yMax = Math.max(
     10.5,
-    ...result.curve.flatMap((entry) => [
-      entry.loadLower,
-      entry.baseLoad,
-      entry.loadUpper,
-      entry.systemLoad
-    ]),
+    ...result.curve.flatMap((entry) => [entry.loadLower, entry.baseLoad, entry.loadUpper]),
+    result.systemScenario.systemLoad,
     ...result.input.machines
   );
 
@@ -645,6 +655,7 @@ function renderHvacChart(result) {
     padding,
     xMin,
     xMax,
+    chartBottom,
     xScale,
     yScale
   });
@@ -798,378 +809,31 @@ function ensureHvacChartTooltip() {
   return tooltip;
 }
 
-function exportHvacPdf() {
-  const result = lastHvacResult ?? calculateHvacScenario(hvacState, machineShortlist);
-  const exportWindow = window.open("", "_blank", "noopener,noreferrer");
+function bindRevealAnimations() {
+  const items = document.querySelectorAll("[data-reveal]");
+  const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-  if (!exportWindow) {
-    window.alert("No se pudo abrir la ventana de exportación. Revisa el bloqueador de popups.");
+  if (reduceMotion) {
+    items.forEach((item) => item.classList.add("is-visible"));
     return;
   }
 
-  exportWindow.document.write(buildExportDocument(result));
-  exportWindow.document.close();
-}
-
-function buildExportDocument(result) {
-  const inputRows = buildInputRows(result)
-    .map(
-      (row) => `
-        <tr>
-          <td>${row.group}</td>
-          <td>${row.label}</td>
-          <td>${row.value}</td>
-        </tr>
-      `
-    )
-    .join("");
-
-  const resultRows = buildRecommendationRows(result)
-    .map(
-      (row) => `
-        <tr>
-          <td>${row.label}</td>
-          <td>${row.value}</td>
-          <td>${row.note}</td>
-        </tr>
-      `
-    )
-    .join("");
-
-  return `<!doctype html>
-  <html lang="es">
-    <head>
-      <meta charset="UTF-8" />
-      <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-      <title>Exportación HVAC</title>
-      <base href="${document.baseURI}" />
-      <style>
-        :root {
-          --bg: #f6f0e9;
-          --paper: #fffaf5;
-          --ink: #191613;
-          --muted: #6b6057;
-          --line: rgba(25, 22, 19, 0.14);
-          --accent: #d64c2f;
-          --sage: #79866d;
-          --system: rgba(124, 210, 94, 0.9);
-          --ui-font: "Avenir Next", "Segoe UI", "Helvetica Neue", sans-serif;
-          --display-font: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Palatino, serif;
-          --mono-font: "SFMono-Regular", Menlo, Consolas, monospace;
+  const observer = new IntersectionObserver(
+    (entries) => {
+      entries.forEach((entry) => {
+        if (entry.isIntersecting) {
+          entry.target.classList.add("is-visible");
+          observer.unobserve(entry.target);
         }
-
-        * { box-sizing: border-box; }
-        body {
-          margin: 0;
-          padding: 2.2cm 1.6cm 1.6cm;
-          color: var(--ink);
-          background: white;
-          font-family: var(--ui-font);
-        }
-        h1, h2, h3, p { margin: 0; }
-        .export-header {
-          display: grid;
-          grid-template-columns: auto 1fr;
-          gap: 0.9rem;
-          align-items: center;
-          margin-bottom: 1.2rem;
-        }
-        .export-header img {
-          width: 3.1rem;
-          height: 3.1rem;
-          object-fit: contain;
-          border-radius: 0.8rem;
-        }
-        .export-kicker {
-          color: var(--accent);
-          text-transform: uppercase;
-          letter-spacing: 0.18em;
-          font-size: 0.68rem;
-          font-weight: 700;
-        }
-        .export-title {
-          font-family: var(--display-font);
-          font-size: 2rem;
-          line-height: 0.96;
-          letter-spacing: -0.04em;
-        }
-        .export-copy {
-          margin-top: 0.45rem;
-          color: var(--muted);
-          line-height: 1.45;
-          font-size: 0.92rem;
-        }
-        .export-meta {
-          display: flex;
-          gap: 1rem;
-          flex-wrap: wrap;
-          margin: 0.9rem 0 1.15rem;
-          color: var(--muted);
-          font-size: 0.82rem;
-        }
-        .export-meta strong { color: var(--ink); }
-        .export-block {
-          margin-top: 1.15rem;
-          padding-top: 0.95rem;
-          border-top: 1px solid var(--line);
-        }
-        .export-block-title {
-          margin-bottom: 0.7rem;
-          font-family: var(--mono-font);
-          font-size: 0.88rem;
-          font-weight: 700;
-          text-transform: uppercase;
-          letter-spacing: 0.08em;
-        }
-        .export-chart-card {
-          padding: 0.9rem;
-          border: 1px solid var(--line);
-          border-radius: 1rem;
-          background: var(--paper);
-        }
-        .export-chart-card svg {
-          width: 100%;
-          height: auto;
-          display: block;
-        }
-        table {
-          width: 100%;
-          border-collapse: collapse;
-          table-layout: fixed;
-        }
-        th, td {
-          padding: 0.52rem 0.55rem;
-          border: 1px solid var(--line);
-          vertical-align: top;
-          text-align: left;
-          font-size: 0.86rem;
-          line-height: 1.4;
-        }
-        th {
-          background: #f5ede4;
-          font-weight: 700;
-        }
-        .export-footer-note {
-          margin-top: 1rem;
-          color: var(--muted);
-          font-size: 0.8rem;
-          line-height: 1.45;
-        }
-        .chart-surface { fill: rgba(255, 255, 255, 0.62); }
-        .chart-grid-line { stroke: rgba(25, 22, 19, 0.08); stroke-width: 1; }
-        .chart-percentile-band { fill: rgba(121, 134, 109, 0.04); }
-        .chart-percentile-band-extreme { fill: rgba(214, 76, 47, 0.06); }
-        .chart-percentile-band-design { fill: rgba(214, 76, 47, 0.045); }
-        .chart-percentile-band-winter { fill: rgba(178, 112, 67, 0.05); }
-        .chart-percentile-band-habitual { fill: rgba(92, 148, 255, 0.09); }
-        .chart-percentile-band-warm { fill: rgba(214, 76, 47, 0.08); }
-        .chart-axis { stroke: rgba(25, 22, 19, 0.2); stroke-width: 1.5; }
-        .chart-density-area { fill: rgba(121, 134, 109, 0.12); }
-        .chart-density-line {
-          fill: none;
-          stroke: rgba(121, 134, 109, 0.72);
-          stroke-width: 2;
-          stroke-linecap: round;
-        }
-        .chart-path { fill: none; stroke-width: 3.5; stroke-linecap: round; stroke-linejoin: round; }
-        .chart-path-base { stroke: var(--accent); }
-        .chart-margin-band { fill: rgba(25, 22, 19, 0.18); }
-        .chart-operational-band { fill: rgba(124, 210, 94, 0.52); }
-        .chart-machine-line { stroke: rgba(25, 22, 19, 0.18); stroke-dasharray: 7 8; }
-        .chart-percentile-line { stroke: rgba(25, 22, 19, 0.14); stroke-width: 1.1; stroke-dasharray: 3 7; }
-        .chart-percentile-line-design { stroke: rgba(214, 76, 47, 0.32); }
-        .chart-percentile-line-winter { stroke: rgba(150, 98, 54, 0.34); }
-        .chart-percentile-line-habitual { stroke: rgba(121, 134, 109, 0.38); }
-        .chart-machine-label, .chart-axis-label, .chart-legend {
-          fill: var(--muted);
-          font-size: 12px;
-          font-family: var(--mono-font);
-        }
-        .chart-percentile-caption {
-          fill: rgba(25, 22, 19, 0.5);
-          font-size: 10px;
-          font-family: var(--mono-font);
-        }
-        .chart-legend-base { fill: var(--accent); }
-        .chart-legend-margin { fill: rgba(25, 22, 19, 0.68); }
-        .chart-legend-distribution { fill: rgba(121, 134, 109, 0.82); }
-        .chart-legend-percentiles { fill: rgba(25, 22, 19, 0.5); }
-        .chart-point { fill: var(--accent); stroke: rgba(255, 255, 255, 0.95); stroke-width: 2; }
-        .chart-modulation-card-surface { fill: rgba(252, 247, 240, 0.92); stroke: rgba(25, 22, 19, 0.08); stroke-width: 1; }
-        .chart-modulation-card-title, .chart-modulation-card-subtitle, .chart-modulation-card-row-label, .chart-modulation-card-row-value {
-          font-family: var(--mono-font);
-        }
-        .chart-modulation-card-title { fill: var(--ink); font-size: 7.8px; }
-        .chart-modulation-card-subtitle { fill: rgba(25, 22, 19, 0.62); font-size: 7.4px; }
-        .chart-modulation-card-line { stroke: rgba(25, 22, 19, 0.58); stroke-width: 1.4; stroke-dasharray: 4 4; stroke-linecap: round; }
-        .chart-modulation-card-row-label { fill: var(--muted); font-size: 7.4px; }
-        .chart-modulation-card-row-value { fill: var(--ink); font-size: 7.8px; font-weight: 700; }
-        .chart-hover-state, .chart-hit-area { display: none; }
-
-        @page { size: A4 portrait; margin: 1.3cm; }
-      </style>
-    </head>
-    <body>
-      <header class="export-header">
-        <img src="./src/assets/ui/montenovo-mark.png" alt="" />
-        <div>
-          <p class="export-kicker">Montenovo · HVAC Calculator</p>
-          <h1 class="export-title">Exportación de cálculo HVAC</h1>
-          <p class="export-copy">
-            Gráfica de carga térmica, tabla de inputs y lectura resumida de resultados y recomendaciones.
-          </p>
-        </div>
-      </header>
-
-      <div class="export-meta">
-        <span><strong>T interior:</strong> ${formatNumber(result.input.indoorTemp)} °C</span>
-        <span><strong>TS99:</strong> ${formatNumber(result.input.ts99)} °C</span>
-        <span><strong>TS99,6:</strong> ${formatNumber(result.input.ts996)} °C</span>
-        <span><strong>Margen:</strong> ${Math.round(result.input.designMargin)} %</span>
-      </div>
-
-      <section class="export-block">
-        <h2 class="export-block-title">Gráfica</h2>
-        <div class="export-chart-card">
-          ${hvacChart.outerHTML}
-        </div>
-      </section>
-
-      <section class="export-block">
-        <h2 class="export-block-title">Valores de los inputs</h2>
-        <table>
-          <thead>
-            <tr>
-              <th style="width: 28%">Bloque</th>
-              <th style="width: 44%">Parámetro</th>
-              <th style="width: 28%">Valor</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${inputRows}
-          </tbody>
-        </table>
-      </section>
-
-      <section class="export-block">
-        <h2 class="export-block-title">Resultados y recomendaciones</h2>
-        <table>
-          <thead>
-            <tr>
-              <th style="width: 26%">Lectura</th>
-              <th style="width: 18%">Valor</th>
-              <th style="width: 56%">Nota</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${resultRows}
-          </tbody>
-        </table>
-      </section>
-
-      <p class="export-footer-note">
-        La exportación abre el diálogo de impresión del navegador para guardar el documento como PDF.
-      </p>
-
-      <script>
-        window.addEventListener("load", () => {
-          setTimeout(() => window.print(), 250);
-        });
-        window.addEventListener("afterprint", () => window.close());
-      </script>
-    </body>
-  </html>`;
-}
-
-function buildInputRows(result) {
-  const groupMap = new Map(hvacControlGroups.map((group) => [group.id, group.title]));
-  return hvacControls.map((control) => ({
-    group: groupMap.get(control.group) ?? control.group,
-    label: control.label,
-    value: formatControlValue(control, readValueFromResult(result.input, control.key))
-  }));
-}
-
-function buildRecommendationRows(result) {
-  const shortlistRows = result.shortlist.map((brand) => ({
-    label: `Recomendación ${brand.brand}`,
-    value: brand.recommended ?? "Insuficiente",
-    note: `${brand.summary} ${brand.nuance}`
-  }));
-
-  return [
-    {
-      label: "H transmisión",
-      value: `${formatNumber(result.transmission)} W/K`,
-      note: "Suma de huecos, fachada, cubierta y suelo con sus U activas."
+      });
     },
     {
-      label: "H ventilación neta",
-      value: `${formatNumber(result.ventilation)} W/K`,
-      note: "Caudal VMC corregido por recuperación y pérdidas extra."
-    },
-    {
-      label: "H total",
-      value: `${formatNumber(result.hTotal)} W/K`,
-      note: "Coeficiente final del modelo para calcular la carga."
-    },
-    {
-      label: "Carga TS99",
-      value: `${formatNumber(result.scenarios[0].baseLoad)} kW`,
-      note: `Con margen: ${formatNumber(result.scenarios[0].loadUpper)} kW.`
-    },
-    {
-      label: "Carga TS99,6",
-      value: `${formatNumber(result.scenarios[1].baseLoad)} kW`,
-      note: `Con margen: ${formatNumber(result.scenarios[1].loadUpper)} kW.`
-    },
-    {
-      label: "Carga Tmin",
-      value: `${formatNumber(result.scenarios[2].baseLoad)} kW`,
-      note: `Con sistema: ${formatNumber(result.scenarios[2].systemLoad)} kW.`
-    },
-    {
-      label: "Clase calefacción",
-      value: formatClass(result.heatingClass),
-      note: "Se dimensiona con la carga superior de TS99,6."
-    },
-    {
-      label: "Clase sistema",
-      value: formatClass(result.systemClass),
-      note: "Añade colchón ACS / operativo sobre la banda superior."
-    },
-    {
-      label: "Recomendación base",
-      value: result.physicalRecommendation ? formatClass(result.physicalRecommendation) : "16+ kW",
-      note: result.recommendationText
-    },
-    ...shortlistRows
-  ];
-}
+      rootMargin: "0px 0px -10% 0px",
+      threshold: 0.15
+    }
+  );
 
-function readValueFromResult(input, key) {
-  switch (key) {
-    case "areaOpenings":
-      return input.areas.openings;
-    case "areaFacade":
-      return input.areas.facade;
-    case "areaRoof":
-      return input.areas.roof;
-    case "areaFloor":
-      return input.areas.floor;
-    case "uOpenings":
-      return input.uValues.openings;
-    case "uFacade":
-      return input.uValues.facade;
-    case "uRoof":
-      return input.uValues.roof;
-    case "uFloor":
-      return input.uValues.floor;
-    case "extraLosses":
-      return input.extras.base;
-    default:
-      return input[key];
-  }
+  items.forEach((item) => observer.observe(item));
 }
 
 function readControlValue(key) {

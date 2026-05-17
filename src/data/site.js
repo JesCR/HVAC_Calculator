@@ -179,8 +179,8 @@ export const hvacControlGroups = [
   },
   {
     id: "ventilation",
-    title: "Ventilación, extras y operación",
-    note: "VMC continua, pérdidas residuales y colchón operativo"
+    title: "Ventilación y extras",
+    note: "VMC continua y pérdidas residuales no modeladas"
   },
   {
     id: "dimensioning",
@@ -336,8 +336,8 @@ const hvacBaseControls = [
   },
   {
     key: "operationalBuffer",
-    group: "ventilation",
-    label: "Colchón ACS / operativo",
+    group: "dimensioning",
+    label: "Colchón ACS/Desescarches/Operativo",
     min: 0,
     max: 1.5,
     step: 0.1,

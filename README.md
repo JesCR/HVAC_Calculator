@@ -1,6 +1,6 @@
 # HVAC Calculator
 
-Calculadora web estática para estimar la carga térmica de calefacción de una vivienda y recomendar una clase de máquina HVAC a partir de hipótesis simplificadas de envolvente, ventilación y margen de diseño.
+Calculadora web estática para estimar la carga térmica de calefacción de un edificio y recomendar una clase de máquina HVAC a partir de hipótesis simplificadas de envolvente, ventilación y margen de diseño.
 
 ## Qué hace
 
@@ -38,6 +38,7 @@ La lógica principal está en `src/utils/hvac.js` y los datos base del escenario
 ## Scripts
 
 ```bash
+npm run dev
 npm run check
 npm run build
 npm run deploy
@@ -46,12 +47,12 @@ npm run deploy
 ## Desarrollo local
 
 ```bash
+npm run dev
 npm run check
-npm run build
-open dist/index.html
 ```
 
-No hay bundler ni framework: el proyecto se sirve como sitio estático.
+No hay bundler ni framework: el proyecto se sirve como sitio estático. El servidor local
+arranca por defecto en `http://127.0.0.1:4173`.
 
 ## Deploy
 
